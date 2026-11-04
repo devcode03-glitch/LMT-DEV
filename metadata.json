@@ -1,0 +1,6 @@
+{
+  "name": "VectorLMS & Collaborative PDF Board",
+  "description": "Enterprise Learning Management System with hierarchical taxonomy, role-based access control, real-time vector collaborative PDF board, differentiated coursework, interactive video assignments, and rubrics grading engine.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
