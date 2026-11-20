@@ -311,6 +311,8 @@ export interface MCQQuestion {
   negativeMarks: number;
   explanation: string;
   tags?: string[];
+  language?: 'en' | 'gu';
+  importBatchName?: string;
 }
 
 export interface BlueprintRule {
@@ -340,10 +342,14 @@ export interface GeneratedExam {
   id: string;
   blueprintId?: string;
   title: string;
+  description?: string;
   subjectId: string;
   durationMinutes: number;
   passingPercentage: number;
   totalMarks: number;
+  negativeMarkingEnabled?: boolean;
+  language?: 'en' | 'gu';
+  sourceBatchName?: string;
   questions: MCQQuestion[];
   createdAt: string;
 }

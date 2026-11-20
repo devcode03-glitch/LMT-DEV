@@ -3,23 +3,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLMS } from '../../context/LMSContext';
-import { DifficultyLevel, MCQQuestion } from '../../types/lms';
+import { DifficultyLevel, GeneratedExam, MCQQuestion } from '../../types/lms';
+import { containsGujarati } from '../../utils/excelMcqParser';
+import { PrepareTestModal } from './PrepareTestModal';
 import { 
   Plus, 
   Search, 
   Trash2, 
-  Edit3, 
-  CheckCircle2, 
-  HelpCircle, 
   Filter,
   Check,
-  Layers,
-  BookOpen
+  FileSpreadsheet,
+  Play,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
-export const InstructorQuestionBank: React.FC = () => {
+interface InstructorQuestionBankProps {
+  initialBatchFilter?: string;
+  onOpenExcelUpload?: () => void;
+  onExamPublished?: (exam: GeneratedExam, launchImmediately: boolean) => void;
+}
+
+export const InstructorQuestionBank: React.FC<InstructorQuestionBankProps> = ({
+  initialBatchFilter,
+  onOpenExcelUpload,
+  onExamPublished
+}) => {
   const { 
     examSubjects, 
     examModules, 
@@ -34,7 +45,27 @@ export const InstructorQuestionBank: React.FC = () => {
   const [filterModuleId, setFilterModuleId] = useState<string>('all');
   const [filterChapterId, setFilterChapterId] = useState<string>('all');
   const [filterDifficulty, setFilterDifficulty] = useState<string>('all');
+  const [filterLanguage, setFilterLanguage] = useState<'all' | 'gu' | 'en'>('all');
+  const [filterBatchName, setFilterBatchName] = useState<string>(initialBatchFilter || 'all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Multi-select for preparing a custom test directly from viewed MCQs
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showPrepareModal, setShowPrepareModal] = useState(false);
+
+  useEffect(() => {
+    if (initialBatchFilter) {
+      setFilterBatchName(initialBatchFilter);
+    }
+  }, [initialBatchFilter]);
+
+  const availableBatches = useMemo(() => {
+    const names = new Set<string>();
+    mcqQuestions.forEach(q => {
+      if (q.importBatchName) names.add(q.importBatchName);
+    });
+    return Array.from(names);
+  }, [mcqQuestions]);
 
   // Add Question Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -122,18 +153,44 @@ export const InstructorQuestionBank: React.FC = () => {
       const matchModule = filterModuleId === 'all' || q.moduleId === filterModuleId;
       const matchChapter = filterChapterId === 'all' || q.chapterId === filterChapterId;
       const matchDifficulty = filterDifficulty === 'all' || q.difficulty === filterDifficulty;
+      const qLang = q.language || (containsGujarati(q.questionText) ? 'gu' : 'en');
+      const matchLang = filterLanguage === 'all' || qLang === filterLanguage;
+      const matchBatch = filterBatchName === 'all' || q.importBatchName === filterBatchName;
       const matchSearch = !searchQuery || 
         q.questionText.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        q.explanation.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchSubject && matchModule && matchChapter && matchDifficulty && matchSearch;
+        q.explanation.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        q.options.some(o => o.text.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchSubject && matchModule && matchChapter && matchDifficulty && matchLang && matchBatch && matchSearch;
     });
-  }, [mcqQuestions, filterSubjectId, filterModuleId, filterChapterId, filterDifficulty, searchQuery]);
+  }, [mcqQuestions, filterSubjectId, filterModuleId, filterChapterId, filterDifficulty, filterLanguage, filterBatchName, searchQuery]);
+
+  const selectedQuestionsList: MCQQuestion[] = useMemo(() => {
+    if (selectedIds.length > 0) {
+      return mcqQuestions.filter(q => selectedIds.includes(q.id));
+    }
+    return filteredQuestions;
+  }, [selectedIds, mcqQuestions, filteredQuestions]);
+
+  const toggleSelectQuestion = (id: string) => {
+    setSelectedIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  };
+
+  const toggleSelectAllFiltered = () => {
+    const filteredIds = filteredQuestions.map(q => q.id);
+    const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !filteredIds.includes(id)));
+    } else {
+      setSelectedIds(Array.from(new Set([...selectedIds, ...filteredIds])));
+    }
+  };
 
   // Handle Create Question Submission
   const handleCreateQuestion = (e: React.FormEvent) => {
     e.preventDefault();
     if (!questionText.trim() || !optA.trim() || !optB.trim() || !optC.trim() || !optD.trim()) return;
 
+    const combined = `${questionText} ${optA} ${optB} ${optC} ${optD}`;
     addMCQQuestion({
       subjectId: modalSubjectId,
       moduleId: modalModuleId,
@@ -149,11 +206,15 @@ export const InstructorQuestionBank: React.FC = () => {
       difficulty,
       marks,
       negativeMarks,
-      explanation: explanation.trim()
+      explanation: explanation.trim(),
+      language: containsGujarati(combined) ? 'gu' : 'en'
     });
 
     setIsModalOpen(false);
   };
+
+  const allFilteredSelected =
+    filteredQuestions.length > 0 && filteredQuestions.every(q => selectedIds.includes(q.id));
 
   return (
     <div className="space-y-6">
@@ -163,20 +224,48 @@ export const InstructorQuestionBank: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
             <span>MCQ Question Bank Management</span>
             <span>·</span>
-            <span>Section 2 Instructor Data Input</span>
+            <span>Gujarati & English Repository</span>
           </div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">
-            Hierarchical Question Repository & Taxonomy
+            View MCQs & Prepare Custom Test
           </h2>
         </div>
 
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors shadow-xs shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New MCQ Question</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {onOpenExcelUpload && (
+            <button
+              type="button"
+              onClick={onOpenExcelUpload}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Upload Excel (ગુજરાતી)</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={selectedQuestionsList.length === 0}
+            onClick={() => setShowPrepareModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold transition-colors shadow-xs whitespace-nowrap"
+          >
+            <Play className="w-3.5 h-3.5 fill-white" />
+            <span>
+              {selectedIds.length > 0
+                ? `Prepare Test (${selectedIds.length} Selected)`
+                : `Prepare Test (${filteredQuestions.length} Shown)`}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openAddModal}
+            className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors shadow-xs whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Single MCQ</span>
+          </button>
+        </div>
       </div>
 
       {/* Dynamic Chained Dropdown Filter Bar (Section 2) */}
@@ -255,22 +344,77 @@ export const InstructorQuestionBank: React.FC = () => {
           </div>
         </div>
 
-        {/* Text Search */}
-        <div className="relative pt-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 mt-0.5" />
-          <input
-            type="text"
-            placeholder="Search by question keywords, formula, or explanation..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-          />
+        {/* Language, Batch & Text Search Row */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-1">
+          <div className="md:col-span-3">
+            <label className="text-[11px] font-semibold text-slate-600 block mb-1">Language / ભાષા</label>
+            <select
+              value={filterLanguage}
+              onChange={e => setFilterLanguage(e.target.value as 'all' | 'gu' | 'en')}
+              className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+            >
+              <option value="all">All Languages (બધી ભાષાઓ)</option>
+              <option value="gu">ગુજરાતી (Gujarati Only)</option>
+              <option value="en">English Only</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-3">
+            <label className="text-[11px] font-semibold text-slate-600 block mb-1">Excel Import Batch</label>
+            <select
+              value={filterBatchName}
+              onChange={e => setFilterBatchName(e.target.value)}
+              className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+            >
+              <option value="all">All Questions (Manual + Excel)</option>
+              {availableBatches.map(b => (
+                <option key={b} value={b}>Excel: {b}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-6">
+            <label className="text-[11px] font-semibold text-slate-600 block mb-1">Search Keywords (ગુજરાતી / English)</label>
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search question text, options, or explanation..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Questions Count & Density Meta */}
-      <div className="flex items-center justify-between text-xs text-slate-500 px-1">
-        <span>Showing <strong>{filteredQuestions.length}</strong> questions in active filter</span>
+      {/* Questions Count & Bulk Select Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 px-1">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleSelectAllFiltered}
+            className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-semibold"
+          >
+            {allFilteredSelected ? (
+              <CheckSquare className="w-4 h-4 text-slate-900" />
+            ) : (
+              <Square className="w-4 h-4 text-slate-400" />
+            )}
+            <span>{allFilteredSelected ? 'Deselect All Shown' : 'Select All Shown for Test'}</span>
+          </button>
+          <span>·</span>
+          <span>Showing <strong>{filteredQuestions.length}</strong> questions</span>
+          {selectedIds.length > 0 && (
+            <>
+              <span>·</span>
+              <span className="text-emerald-700 font-semibold">
+                {selectedIds.length} selected
+              </span>
+            </>
+          )}
+        </div>
         <span className="font-mono">Total Repository: {mcqQuestions.length} items</span>
       </div>
 
@@ -279,36 +423,66 @@ export const InstructorQuestionBank: React.FC = () => {
         {filteredQuestions.map((q, idx) => {
           const subject = examSubjects.find(s => s.id === q.subjectId);
           const chapter = examChapters.find(c => c.id === q.chapterId);
+          const isSelected = selectedIds.includes(q.id);
+          const qLang = q.language || (containsGujarati(q.questionText) ? 'gu' : 'en');
           return (
             <div 
               key={q.id}
-              className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-all space-y-3"
+              className={`bg-white rounded-xl border p-5 shadow-xs transition-all space-y-3 ${
+                isSelected ? 'border-slate-900 ring-1 ring-slate-900/15' : 'border-slate-200 hover:border-slate-300'
+              }`}
             >
               {/* Question Header & Meta */}
               <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span className="font-mono font-semibold text-slate-800">{subject?.code}</span>
-                    <span>·</span>
-                    <span className="text-slate-700">{chapter?.name}</span>
-                    <span>·</span>
-                    <span className={`font-mono text-[11px] font-bold ${
-                      q.difficulty === 'EASY' 
-                        ? 'text-emerald-700' 
-                        : q.difficulty === 'MEDIUM' 
-                        ? 'text-amber-700' 
-                        : 'text-red-700'
-                    }`}>
-                      {q.difficulty}
-                    </span>
-                    <span>·</span>
-                    <span className="font-mono tabular-nums text-slate-700">+{q.marks} / -{q.negativeMarks} pts</span>
-                  </div>
+                <div className="flex items-start gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectQuestion(q.id)}
+                    className="mt-0.5 text-slate-500 hover:text-slate-900 shrink-0"
+                    title="Select MCQ for test"
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="w-4 h-4 text-slate-900" />
+                    ) : (
+                      <Square className="w-4 h-4 text-slate-300" />
+                    )}
+                  </button>
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span className="font-mono font-semibold text-slate-800">{subject?.code}</span>
+                      <span>·</span>
+                      <span className="text-slate-700">{chapter?.name}</span>
+                      <span>·</span>
+                      <span className={`font-mono text-[11px] font-bold ${
+                        q.difficulty === 'EASY' 
+                          ? 'text-emerald-700' 
+                          : q.difficulty === 'MEDIUM' 
+                          ? 'text-amber-700' 
+                          : 'text-red-700'
+                      }`}>
+                        {q.difficulty}
+                      </span>
+                      <span>·</span>
+                      <span className="font-mono tabular-nums text-slate-700">+{q.marks} / -{q.negativeMarks} pts</span>
+                      <span>·</span>
+                      <span className="font-semibold text-indigo-700">
+                        {qLang === 'gu' ? 'ગુજરાતી' : 'English'}
+                      </span>
+                      {q.importBatchName && (
+                        <>
+                          <span>·</span>
+                          <span className="font-mono text-[11px] text-emerald-700">
+                            Excel: {q.importBatchName}
+                          </span>
+                        </>
+                      )}
+                    </div>
 
-                  <h3 className="text-sm font-semibold text-slate-900 leading-snug">
-                    <span className="font-mono text-slate-400 mr-2">Q{idx + 1}.</span>
-                    {q.questionText}
-                  </h3>
+                    <h3 className="text-sm font-semibold text-slate-900 leading-relaxed">
+                      <span className="font-mono text-slate-400 mr-2">Q{idx + 1}.</span>
+                      {q.questionText}
+                    </h3>
+                  </div>
                 </div>
 
                 <button
@@ -550,6 +724,22 @@ export const InstructorQuestionBank: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* PREPARE TEST MODAL */}
+      {showPrepareModal && selectedQuestionsList.length > 0 && (
+        <PrepareTestModal
+          questions={selectedQuestionsList}
+          sourceBatchName={filterBatchName !== 'all' ? filterBatchName : undefined}
+          onClose={() => setShowPrepareModal(false)}
+          onPublished={(exam, launchNow) => {
+            setShowPrepareModal(false);
+            setSelectedIds([]);
+            if (onExamPublished) {
+              onExamPublished(exam, launchNow);
+            }
+          }}
+        />
       )}
     </div>
   );

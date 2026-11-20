@@ -15,6 +15,12 @@ import {
 
 export const EXAM_SUBJECTS: ExamSubject[] = [
   {
+    id: 'sub-guj101',
+    code: 'GUJ-101',
+    name: 'ગુજરાતી વિજ્ઞાન, ગણિત અને સામાન્ય જ્ઞાન (Gujarati Exam)',
+    description: 'ગુજરાતી માધ્યમની સ્પર્ધાત્મક અને શૈક્ષણિક MCQ પરીક્ષાઓ માટે વિષય, મોડ્યુલ અને પ્રકરણ આધારિત પ્રશ્નબેંક.'
+  },
+  {
     id: 'sub-cs401',
     code: 'CS-401',
     name: 'Distributed Systems & Vector Consensus',
@@ -29,12 +35,18 @@ export const EXAM_SUBJECTS: ExamSubject[] = [
 ];
 
 export const EXAM_MODULES: ExamModule[] = [
+  { id: 'mod-guj-1', subjectId: 'sub-guj101', name: 'મોડ્યુલ ૧: ગુજરાતનો ઇતિહાસ અને ભૂગોળ', order: 1 },
+  { id: 'mod-guj-2', subjectId: 'sub-guj101', name: 'મોડ્યુલ ૨: સામાન્ય વિજ્ઞાન અને કમ્પ્યુટર', order: 2 },
   { id: 'mod-1', subjectId: 'sub-cs401', name: 'Module 1: Foundations of Asynchronous Consensus', order: 1 },
   { id: 'mod-2', subjectId: 'sub-cs401', name: 'Module 2: Replicated State Machines & Protocol Invariants', order: 2 },
   { id: 'mod-3', subjectId: 'sub-neur202', name: 'Module 1: Biophysical Membrane Kinetics', order: 1 }
 ];
 
 export const EXAM_CHAPTERS: ExamChapter[] = [
+  { id: 'chp-guj-1', moduleId: 'mod-guj-1', subjectId: 'sub-guj101', name: 'પ્રકરણ ૧: ગુજરાતની ભૂગોળ અને નદીઓ', order: 1 },
+  { id: 'chp-guj-2', moduleId: 'mod-guj-1', subjectId: 'sub-guj101', name: 'પ્રકરણ ૨: ભારતનું બંધારણ અને ઇતિહાસ', order: 2 },
+  { id: 'chp-guj-3', moduleId: 'mod-guj-2', subjectId: 'sub-guj101', name: 'પ્રકરણ ૩: ભૌતિક અને જીવવિજ્ઞાન', order: 1 },
+  { id: 'chp-guj-4', moduleId: 'mod-guj-2', subjectId: 'sub-guj101', name: 'પ્રકરણ ૪: કમ્પ્યુટર અને ટેકનોલોજી', order: 2 },
   { id: 'chp-101', moduleId: 'mod-1', subjectId: 'sub-cs401', name: 'Chapter 1: FLP Impossibility & Timing Models', order: 1 },
   { id: 'chp-102', moduleId: 'mod-1', subjectId: 'sub-cs401', name: 'Chapter 2: Vector Clocks & Causal Ordering', order: 2 },
   { id: 'chp-201', moduleId: 'mod-2', subjectId: 'sub-cs401', name: 'Chapter 3: Raft Leader Election & Quorums', order: 1 },
@@ -267,7 +279,129 @@ export const INITIAL_MCQ_QUESTIONS: MCQQuestion[] = [
     difficulty: 'EASY',
     marks: 2,
     negativeMarks: 0.5,
-    explanation: 'Sodium current is given by I_Na = g_Na_max * m^3 * h * (V - E_Na). The m variable represents activation and operates on a faster kinetic timescale than inactivation variable h.'
+    explanation: 'Sodium current is given by I_Na = g_Na_max * m^3 * h * (V - E_Na). The m variable represents activation and operates on a faster kinetic timescale than inactivation variable h.',
+    language: 'en'
+  }
+];
+
+export interface SampleGujaratiExcelRow {
+  'પ્રશ્ન (Question)': string;
+  'વિકલ્પ A (Option A)': string;
+  'વિકલ્પ B (Option B)': string;
+  'વિકલ્પ C (Option C)': string;
+  'વિકલ્પ D (Option D)': string;
+  'સાચો જવાબ (Correct)': 'A' | 'B' | 'C' | 'D';
+  'મુશ્કેલી (Difficulty)': 'EASY' | 'MEDIUM' | 'HARD';
+  'ગુણ (Marks)': number;
+  'નેગેટિવ ગુણ (Negative Marks)': number;
+  'પ્રકરણ (Chapter)': string;
+  'સમજૂતી (Explanation)': string;
+}
+
+export const SAMPLE_GUJARATI_EXCEL_ROWS: SampleGujaratiExcelRow[] = [
+  {
+    'પ્રશ્ન (Question)': 'ગુજરાતની સૌથી લાંબી નદી કઈ છે?',
+    'વિકલ્પ A (Option A)': 'નર્મદા',
+    'વિકલ્પ B (Option B)': 'સાબરમતી',
+    'વિકલ્પ C (Option C)': 'તાપી',
+    'વિકલ્પ D (Option D)': 'મહી',
+    'સાચો જવાબ (Correct)': 'B',
+    'મુશ્કેલી (Difficulty)': 'EASY',
+    'ગુણ (Marks)': 2,
+    'નેગેટિવ ગુણ (Negative Marks)': 0.5,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૧: ગુજરાતની ભૂગોળ અને નદીઓ',
+    'સમજૂતી (Explanation)': 'ગુજરાત રાજ્યમાં વહેતી લંબાઈની દ્રષ્ટિએ સાબરમતી (આશરે ૩૨૧ કિમી) ગુજરાતની સૌથી લાંબી નદી છે, જ્યારે જળજથ્થાની દ્રષ્ટિએ નર્મદા સૌથી મોટી નદી છે.'
+  },
+  {
+    'પ્રશ્ન (Question)': 'ભારતીય બંધારણના કયા અનુચ્છેદ હેઠળ સમાનતાનો મૂળભૂત અધિકાર આપવામાં આવ્યો છે?',
+    'વિકલ્પ A (Option A)': 'અનુચ્છેદ ૧૪ થી ૧૮',
+    'વિકલ્પ B (Option B)': 'અનુચ્છેદ ૧૯ થી ૨૨',
+    'વિકલ્પ C (Option C)': 'અનુચ્છેદ ૨૫ થી ૨૮',
+    'વિકલ્પ D (Option D)': 'અનુચ્છેદ ૩૨',
+    'સાચો જવાબ (Correct)': 'A',
+    'મુશ્કેલી (Difficulty)': 'MEDIUM',
+    'ગુણ (Marks)': 2,
+    'નેગેટિવ ગુણ (Negative Marks)': 0.5,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૨: ભારતનું બંધારણ અને ઇતિહાસ',
+    'સમજૂતી (Explanation)': 'ભારતીય બંધારણના ભાગ-૩ માં અનુચ્છેદ ૧૪ થી ૧૮ સુધી સમાનતાના અધિકાર (Right to Equality) ની જોગવાઈ કરવામાં આવી છે.'
+  },
+  {
+    'પ્રશ્ન (Question)': 'માનવ શરીરમાં લોહીને શુદ્ધ કરવાનું મુખ્ય કાર્ય કયું અંગ કરે છે?',
+    'વિકલ્પ A (Option A)': 'યકૃત (Liver)',
+    'વિકલ્પ B (Option B)': 'મૂત્રપિંડ (Kidney)',
+    'વિકલ્પ C (Option C)': 'જઠર (Stomach)',
+    'વિકલ્પ D (Option D)': 'બરોળ (Spleen)',
+    'સાચો જવાબ (Correct)': 'B',
+    'મુશ્કેલી (Difficulty)': 'EASY',
+    'ગુણ (Marks)': 2,
+    'નેગેટિવ ગુણ (Negative Marks)': 0.5,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૩: ભૌતિક અને જીવવિજ્ઞાન',
+    'સમજૂતી (Explanation)': 'મૂત્રપિંડ (Kidney) માં આવેલા નેફ્રોન્સ લોહીમાંથી યુરિયા અને અન્ય નકામા કચરાને ગાળીને લોહીને શુદ્ધ કરે છે.'
+  },
+  {
+    'પ્રશ્ન (Question)': 'કમ્પ્યુટરમાં CPU નું પૂરું નામ શું છે?',
+    'વિકલ્પ A (Option A)': 'Central Process Unit',
+    'વિકલ્પ B (Option B)': 'Central Processing Unit',
+    'વિકલ્પ C (Option C)': 'Computer Personal Unit',
+    'વિકલ્પ D (Option D)': 'Central Program Utility',
+    'સાચો જવાબ (Correct)': 'B',
+    'મુશ્કેલી (Difficulty)': 'EASY',
+    'ગુણ (Marks)': 2,
+    'નેગેટિવ ગુણ (Negative Marks)': 0.5,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૪: કમ્પ્યુટર અને ટેકનોલોજી',
+    'સમજૂતી (Explanation)': 'CPU એટલે Central Processing Unit, જેને કમ્પ્યુટરનું મગજ કહેવામાં આવે છે.'
+  },
+  {
+    'પ્રશ્ન (Question)': 'પ્રકાશની શૂન્યાવકાશમાં ઝડપ આશરે કેટલી હોય છે?',
+    'વિકલ્પ A (Option A)': '૩ × ૧૦^૫ મીટર/સેકન્ડ',
+    'વિકલ્પ B (Option B)': '૩ × ૧૦^૮ મીટર/સેકન્ડ',
+    'વિકલ્પ C (Option C)': '૩ × ૧૦^૬ કિમી/સેકન્ડ',
+    'વિકલ્પ D (Option D)': '૧.૫ × ૧૦^૮ મીટર/સેકન્ડ',
+    'સાચો જવાબ (Correct)': 'B',
+    'મુશ્કેલી (Difficulty)': 'MEDIUM',
+    'ગુણ (Marks)': 3,
+    'નેગેટિવ ગુણ (Negative Marks)': 0.75,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૩: ભૌતિક અને જીવવિજ્ઞાન',
+    'સમજૂતી (Explanation)': 'શૂન્યાવકાશમાં પ્રકાશની ઝડપ આશરે ૨,૯૯,૭૯૨,૪૫૮ મીટર/સેકન્ડ એટલે કે ૩ × ૧૦^૮ મીટર/સેકન્ડ હોય છે.'
+  },
+  {
+    'પ્રશ્ન (Question)': 'ગુજરાત રાજ્યની સ્થાપના ક્યારે થઈ હતી?',
+    'વિકલ્પ A (Option A)': '૧૫ ઓગસ્ટ ૧૯૪૭',
+    'વિકલ્પ B (Option B)': '૨૬ જાન્યુઆરી ૧૯૫૦',
+    'વિકલ્પ C (Option C)': '૧ મે ૧૯૬૦',
+    'વિકલ્પ D (Option D)': '૧ નવેમ્બર ૧૯૫૬',
+    'સાચો જવાબ (Correct)': 'C',
+    'મુશ્કેલી (Difficulty)': 'EASY',
+    'ગુણ (Marks)': 2,
+    'નેગેટિવ ગુણ (Negative Marks)': 0.5,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૨: ભારતનું બંધારણ અને ઇતિહાસ',
+    'સમજૂતી (Explanation)': 'બૃહદ મુંબઈ રાજ્યમાંથી અલગ પડીને ૧ મે ૧૯૬૦ ના રોજ ગુજરાત રાજ્યની સ્થાપના થઈ હતી.'
+  },
+  {
+    'પ્રશ્ન (Question)': 'ઇન્ટરનેટ પર સુરક્ષિત ડેટા ટ્રાન્સફર માટે કયા પ્રોટોકોલનો ઉપયોગ થાય છે?',
+    'વિકલ્પ A (Option A)': 'HTTP',
+    'વિકલ્પ B (Option B)': 'FTP',
+    'વિકલ્પ C (Option C)': 'HTTPS',
+    'વિકલ્પ D (Option D)': 'SMTP',
+    'સાચો જવાબ (Correct)': 'C',
+    'મુશ્કેલી (Difficulty)': 'MEDIUM',
+    'ગુણ (Marks)': 3,
+    'નેગેટિવ ગુણ (Negative Marks)': 0.75,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૪: કમ્પ્યુટર અને ટેકનોલોજી',
+    'સમજૂતી (Explanation)': 'HTTPS (Hypertext Transfer Protocol Secure) TLS/SSL એન્ક્રિપ્શન દ્વારા વેબ બ્રાઉઝર અને સર્વર વચ્ચે સુરક્ષિત સંચાર પૂરો પાડે છે.'
+  },
+  {
+    'પ્રશ્ન (Question)': 'કચ્છના નાના રણમાં કયું દુર્લભ પ્રાણી જોવા મળે છે?',
+    'વિકલ્પ A (Option A)': 'એશિયાઈ સિંહ',
+    'વિકલ્પ B (Option B)': 'ઘુડખર (જંગલી ગધેડું)',
+    'વિકલ્પ C (Option C)': 'કાળિયાર',
+    'વિકલ્પ D (Option D)': 'રીંછ',
+    'સાચો જવાબ (Correct)': 'B',
+    'મુશ્કેલી (Difficulty)': 'HARD',
+    'ગુણ (Marks)': 4,
+    'નેગેટિવ ગુણ (Negative Marks)': 1,
+    'પ્રકરણ (Chapter)': 'પ્રકરણ ૧: ગુજરાતની ભૂગોળ અને નદીઓ',
+    'સમજૂતી (Explanation)': 'કચ્છના નાના રણમાં આવેલ ઘુડખર અભયારણ્ય ભારતીય જંગલી ગધેડા (ઘુડખર) માટે વિશ્વભરમાં પ્રખ્યાત છે.'
   }
 ];
 

@@ -127,14 +127,17 @@ interface LMSContextType {
   examSubjects: ExamSubject[];
   examModules: ExamModule[];
   examChapters: ExamChapter[];
+  addExamChapter: (subjectId: string, moduleId: string, name: string) => ExamChapter;
   mcqQuestions: MCQQuestion[];
   addMCQQuestion: (q: Omit<MCQQuestion, 'id'>) => void;
+  addMCQQuestionsBulk: (questions: Omit<MCQQuestion, 'id'>[]) => MCQQuestion[];
   updateMCQQuestion: (id: string, q: Partial<MCQQuestion>) => void;
   deleteMCQQuestion: (id: string) => void;
   examBlueprints: ExamBlueprint[];
   createExamBlueprint: (bp: Omit<ExamBlueprint, 'id'>) => void;
   generatedExams: GeneratedExam[];
   createGeneratedExam: (exam: GeneratedExam) => void;
+  deleteGeneratedExam: (examId: string) => void;
   examResults: ExamResult[];
   submitExamResult: (res: ExamResult) => void;
 }
@@ -542,11 +545,41 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // MCQ Exam Engine State (Section 2, 3, 4)
   const [examSubjects] = useState<ExamSubject[]>(EXAM_SUBJECTS);
   const [examModules] = useState<ExamModule[]>(EXAM_MODULES);
-  const [examChapters] = useState<ExamChapter[]>(EXAM_CHAPTERS);
+  const [examChapters, setExamChapters] = useState<ExamChapter[]>(EXAM_CHAPTERS);
   const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>(INITIAL_MCQ_QUESTIONS);
   const [examBlueprints, setExamBlueprints] = useState<ExamBlueprint[]>(INITIAL_BLUEPRINTS);
-  const [generatedExams, setGeneratedExams] = useState<GeneratedExam[]>([]);
+  const [generatedExams, setGeneratedExams] = useState<GeneratedExam[]>([
+    {
+      id: 'exam-sample-cs401',
+      title: 'CS-401 Distributed Consensus Assessment',
+      description: 'Pre-configured technical assessment covering FLP Impossibility, Vector Clocks, Raft, and PBFT.',
+      subjectId: 'sub-cs401',
+      durationMinutes: 15,
+      passingPercentage: 70,
+      totalMarks: 23,
+      negativeMarkingEnabled: true,
+      language: 'en',
+      questions: INITIAL_MCQ_QUESTIONS.slice(0, 8),
+      createdAt: '2026-11-03T10:00:00.000Z'
+    }
+  ]);
   const [examResults, setExamResults] = useState<ExamResult[]>(INITIAL_EXAM_RESULTS);
+
+  const addExamChapter = (subjectId: string, moduleId: string, name: string): ExamChapter => {
+    const existing = examChapters.find(
+      c => c.subjectId === subjectId && c.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (existing) return existing;
+    const newChap: ExamChapter = {
+      id: `chp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      subjectId,
+      moduleId,
+      name: name.trim(),
+      order: examChapters.filter(c => c.moduleId === moduleId).length + 1
+    };
+    setExamChapters(prev => [...prev, newChap]);
+    return newChap;
+  };
 
   const addMCQQuestion = (q: Omit<MCQQuestion, 'id'>) => {
     const newQ: MCQQuestion = {
@@ -554,6 +587,16 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     };
     setMcqQuestions(prev => [newQ, ...prev]);
+  };
+
+  const addMCQQuestionsBulk = (questions: Omit<MCQQuestion, 'id'>[]): MCQQuestion[] => {
+    const timestamp = Date.now();
+    const created: MCQQuestion[] = questions.map((q, idx) => ({
+      ...q,
+      id: `q-xls-${timestamp}-${idx}-${Math.random().toString(36).substring(2, 5)}`
+    }));
+    setMcqQuestions(prev => [...created, ...prev]);
+    return created;
   };
 
   const updateMCQQuestion = (id: string, q: Partial<MCQQuestion>) => {
@@ -574,6 +617,10 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const createGeneratedExam = (exam: GeneratedExam) => {
     setGeneratedExams(prev => [exam, ...prev.filter(e => e.id !== exam.id)]);
+  };
+
+  const deleteGeneratedExam = (examId: string) => {
+    setGeneratedExams(prev => prev.filter(e => e.id !== examId));
   };
 
   const submitExamResult = (res: ExamResult) => {
@@ -647,14 +694,17 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         examSubjects,
         examModules,
         examChapters,
+        addExamChapter,
         mcqQuestions,
         addMCQQuestion,
+        addMCQQuestionsBulk,
         updateMCQQuestion,
         deleteMCQQuestion,
         examBlueprints,
         createExamBlueprint,
         generatedExams,
         createGeneratedExam,
+        deleteGeneratedExam,
         examResults,
         submitExamResult
       }}
