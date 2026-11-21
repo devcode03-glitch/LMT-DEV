@@ -19,7 +19,7 @@ import { MCQExamWorkspace } from './components/exam/MCQExamWorkspace';
 type ActiveTab = 'board' | 'exams' | 'coursework' | 'grading' | 'analytics' | 'admin' | 'media';
 
 function MainApp() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('exams'); // Default to MCQ Exam Engine
+  const [activeTab, setActiveTab] = useState<ActiveTab>('board'); // Default to Collaborative PDF Board
   const { currentUser } = useLMS();
 
   return (

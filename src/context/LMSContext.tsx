@@ -26,8 +26,18 @@ import {
   MCQQuestion,
   ExamBlueprint,
   GeneratedExam,
-  ExamResult
+  ExamResult,
+  PDFStorageDestination,
+  UploadedPDFRecord
 } from '../types/lms';
+import {
+  listStoredPdfs,
+  persistUploadedPdf,
+  loadPdfBytes,
+  migrateStoredPdf,
+  deleteStoredPdf,
+  savePdfToUserDisk
+} from '../utils/pdfStorageService';
 import { 
   INITIAL_USERS, 
   INITIAL_BATCHES, 
@@ -140,6 +150,30 @@ interface LMSContextType {
   deleteGeneratedExam: (examId: string) => void;
   examResults: ExamResult[];
   submitExamResult: (res: ExamResult) => void;
+
+  // PDF Uploads (Disk vs. Cloud Storage)
+  uploadedPdfs: UploadedPDFRecord[];
+  activePdfRecord: UploadedPDFRecord | null;
+  activePdfBytes: Uint8Array | null;
+  isPdfLoading: boolean;
+  pdfUploadModalOpen: boolean;
+  openPdfUploadModal: (preselectedFile?: File | null) => void;
+  closePdfUploadModal: () => void;
+  preselectedPdfFile: File | null;
+  pdfNotice: { type: 'success' | 'info' | 'error'; message: string } | null;
+  dismissPdfNotice: () => void;
+  uploadPdfWithStorageChoice: (params: {
+    name: string;
+    bytes: Uint8Array;
+    pageCount: number;
+    destination: PDFStorageDestination;
+    alsoSaveToComputerDisk?: boolean;
+  }) => Promise<UploadedPDFRecord>;
+  openPdfOnBoard: (record: UploadedPDFRecord) => Promise<void>;
+  closeActivePdf: () => void;
+  migratePdfStorage: (record: UploadedPDFRecord, destination: PDFStorageDestination) => Promise<void>;
+  deleteUploadedPdf: (record: UploadedPDFRecord) => Promise<void>;
+  savePdfCopyToDisk: (record: UploadedPDFRecord) => Promise<void>;
 }
 
 const LMSContext = createContext<LMSContextType | undefined>(undefined);
@@ -182,7 +216,15 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Collaborative Board State
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
-  const totalPages = selectedLecture?.slidesPages?.length || 3;
+  const [uploadedPdfs, setUploadedPdfs] = useState<UploadedPDFRecord[]>([]);
+  const [activePdfRecord, setActivePdfRecord] = useState<UploadedPDFRecord | null>(null);
+  const [activePdfBytes, setActivePdfBytes] = useState<Uint8Array | null>(null);
+  const [isPdfLoading, setIsPdfLoading] = useState<boolean>(false);
+  const [pdfUploadModalOpen, setPdfUploadModalOpen] = useState<boolean>(false);
+  const [preselectedPdfFile, setPreselectedPdfFile] = useState<File | null>(null);
+  const [pdfNotice, setPdfNotice] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
+
+  const totalPages = activePdfRecord ? activePdfRecord.pageCount : (selectedLecture?.slidesPages?.length || 3);
   const [strokes, setStrokes] = useState<VectorStroke[]>([]);
   const [activeTool, setActiveTool] = useState<ToolType>('pen');
   const [strokeColor, setStrokeColor] = useState<string>('#3b82f6');
@@ -627,6 +669,150 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setExamResults(prev => [res, ...prev]);
   };
 
+  // Load persisted PDFs (Disk & Cloud) on mount
+  useEffect(() => {
+    let active = true;
+    listStoredPdfs()
+      .then(list => {
+        if (active) setUploadedPdfs(list);
+      })
+      .catch(() => {
+        // Ignore initial load errors
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Auto-dismiss transient PDF notices
+  useEffect(() => {
+    if (!pdfNotice) return;
+    const timer = setTimeout(() => setPdfNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [pdfNotice]);
+
+  const openPdfUploadModal = useCallback((preselectedFile?: File | null) => {
+    setPreselectedPdfFile(preselectedFile || null);
+    setPdfUploadModalOpen(true);
+  }, []);
+
+  const closePdfUploadModal = useCallback(() => {
+    setPdfUploadModalOpen(false);
+    setPreselectedPdfFile(null);
+  }, []);
+
+  const dismissPdfNotice = useCallback(() => {
+    setPdfNotice(null);
+  }, []);
+
+  const uploadPdfWithStorageChoice = useCallback(async (params: {
+    name: string;
+    bytes: Uint8Array;
+    pageCount: number;
+    destination: PDFStorageDestination;
+    alsoSaveToComputerDisk?: boolean;
+  }): Promise<UploadedPDFRecord> => {
+    const record = await persistUploadedPdf({
+      name: params.name,
+      bytes: params.bytes,
+      pageCount: params.pageCount,
+      destination: params.destination,
+      batchId: selectedBatchId,
+      lectureId: selectedLecture?.id,
+      uploadedBy: currentUser.name,
+    });
+
+    if (params.destination === 'disk' && params.alsoSaveToComputerDisk) {
+      await savePdfToUserDisk(params.bytes, params.name);
+    }
+
+    setUploadedPdfs(prev => [record, ...prev.filter(p => p.id !== record.id)]);
+    setActivePdfRecord(record);
+    setActivePdfBytes(params.bytes);
+    setActivePageIndex(0);
+    setPdfNotice({
+      type: 'success',
+      message:
+        params.destination === 'disk'
+          ? `"${record.name}" saved on Local Disk and loaded on the board (${record.pageCount} pages).`
+          : `"${record.name}" stored in Cloud Storage with a 60-min signed URL (${record.pageCount} pages).`,
+    });
+    return record;
+  }, [selectedBatchId, selectedLecture?.id, currentUser.name]);
+
+  const openPdfOnBoard = useCallback(async (record: UploadedPDFRecord) => {
+    setIsPdfLoading(true);
+    try {
+      const bytes = await loadPdfBytes(record);
+      setActivePdfRecord(record);
+      setActivePdfBytes(bytes);
+      setActivePageIndex(0);
+    } catch {
+      setPdfNotice({
+        type: 'error',
+        message: `Could not open "${record.name}". Try re-uploading the file.`,
+      });
+    } finally {
+      setIsPdfLoading(false);
+    }
+  }, []);
+
+  const closeActivePdf = useCallback(() => {
+    setActivePdfRecord(null);
+    setActivePdfBytes(null);
+    setActivePageIndex(0);
+  }, []);
+
+  const migratePdfStorage = useCallback(async (
+    record: UploadedPDFRecord,
+    destination: PDFStorageDestination
+  ) => {
+    const updated = await migrateStoredPdf(record, destination);
+    setUploadedPdfs(prev => prev.map(p => (p.id === updated.id ? updated : p)));
+    if (activePdfRecord?.id === updated.id) {
+      setActivePdfRecord(updated);
+    }
+    setPdfNotice({
+      type: 'info',
+      message:
+        destination === 'cloud'
+          ? `Moved "${updated.name}" to Cloud Storage with a fresh signed URL.`
+          : `Moved "${updated.name}" to Local Disk Storage.`,
+    });
+  }, [activePdfRecord?.id]);
+
+  const deleteUploadedPdf = useCallback(async (record: UploadedPDFRecord) => {
+    await deleteStoredPdf(record);
+    setUploadedPdfs(prev => prev.filter(p => p.id !== record.id));
+    if (activePdfRecord?.id === record.id) {
+      setActivePdfRecord(null);
+      setActivePdfBytes(null);
+      setActivePageIndex(0);
+    }
+    setPdfNotice({
+      type: 'info',
+      message: `Removed "${record.name}" from ${record.storageDestination === 'cloud' ? 'Cloud Storage' : 'Local Disk'}.`,
+    });
+  }, [activePdfRecord?.id]);
+
+  const savePdfCopyToDisk = useCallback(async (record: UploadedPDFRecord) => {
+    try {
+      const bytes = activePdfRecord?.id === record.id && activePdfBytes
+        ? activePdfBytes
+        : await loadPdfBytes(record);
+      await savePdfToUserDisk(bytes, record.name);
+      setPdfNotice({
+        type: 'success',
+        message: `Saved a local copy of "${record.name}" to your computer disk.`,
+      });
+    } catch {
+      setPdfNotice({
+        type: 'error',
+        message: `Unable to download "${record.name}" to disk.`,
+      });
+    }
+  }, [activePdfRecord?.id, activePdfBytes]);
+
   return (
     <LMSContext.Provider
       value={{
@@ -706,7 +892,24 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createGeneratedExam,
         deleteGeneratedExam,
         examResults,
-        submitExamResult
+        submitExamResult,
+
+        uploadedPdfs,
+        activePdfRecord,
+        activePdfBytes,
+        isPdfLoading,
+        pdfUploadModalOpen,
+        openPdfUploadModal,
+        closePdfUploadModal,
+        preselectedPdfFile,
+        pdfNotice,
+        dismissPdfNotice,
+        uploadPdfWithStorageChoice,
+        openPdfOnBoard,
+        closeActivePdf,
+        migratePdfStorage,
+        deleteUploadedPdf,
+        savePdfCopyToDisk
       }}
     >
       {children}

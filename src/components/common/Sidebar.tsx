@@ -15,7 +15,10 @@ import {
   Plus, 
   Lock,
   Presentation,
-  Clock
+  Clock,
+  Upload,
+  HardDrive,
+  Cloud
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -32,7 +35,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSelectLecture }) => {
     setSelectedLecture,
     createChapter,
     createTopic,
-    createLecture
+    createLecture,
+    uploadedPdfs,
+    activePdfRecord,
+    openPdfOnBoard,
+    openPdfUploadModal
   } = useLMS();
 
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({
@@ -333,6 +340,68 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSelectLecture }) => {
             No chapters found in this batch.
           </div>
         )}
+
+        {/* Uploaded PDFs (Disk & Cloud) */}
+        <div className="pt-4 mt-4 border-t border-slate-200 space-y-1.5">
+          <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold text-slate-500">
+            <span>UPLOADED PDFS</span>
+            <button
+              onClick={() => openPdfUploadModal(null)}
+              className="text-[11px] text-slate-700 hover:text-slate-900 font-medium flex items-center gap-1 hover:underline"
+              title="Upload PDF (Choose Disk or Cloud)"
+            >
+              <Upload className="w-3 h-3" />
+              <span>Upload</span>
+            </button>
+          </div>
+
+          {uploadedPdfs.length === 0 ? (
+            <button
+              onClick={() => openPdfUploadModal(null)}
+              className="w-full text-left px-2.5 py-2.5 rounded-lg border border-dashed border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors text-[11px] text-slate-500"
+            >
+              No PDFs uploaded yet. Click to upload and choose Local Disk or Cloud storage.
+            </button>
+          ) : (
+            <div className="space-y-1">
+              {uploadedPdfs.slice(0, 6).map(pdf => {
+                const isSelected = activePdfRecord?.id === pdf.id;
+                const isCloud = pdf.storageDestination === 'cloud';
+                return (
+                  <button
+                    key={pdf.id}
+                    onClick={() => openPdfOnBoard(pdf)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-md flex items-start gap-2 transition-colors ${
+                      isSelected
+                        ? 'bg-slate-900 text-white font-medium shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                  >
+                    {isCloud ? (
+                      <Cloud
+                        className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
+                          isSelected ? 'text-indigo-300' : 'text-indigo-500'
+                        }`}
+                      />
+                    ) : (
+                      <HardDrive
+                        className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
+                          isSelected ? 'text-amber-300' : 'text-amber-600'
+                        }`}
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs truncate">{pdf.name}</p>
+                      <p className="text-[10px] opacity-75 font-mono tabular-nums mt-0.5">
+                        {isCloud ? 'Cloud' : 'Local Disk'} · {pdf.pageCount}p
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* RBAC Enrollment Notice Footer */}

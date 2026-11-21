@@ -27,9 +27,20 @@ import {
   ChevronRight, 
   ZoomIn, 
   ZoomOut, 
-  Maximize2,
-  FileText
+  FileText,
+  HardDrive,
+  Cloud,
+  FolderOpen,
+  ArrowRightLeft,
+  X,
+  Loader2,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
+import { PDFUploadStorageModal } from './PDFUploadStorageModal';
+import { PDFLibraryDrawer } from './PDFLibraryDrawer';
+import { renderPdfPageToCanvas } from '../../utils/pdfRenderer';
+import { formatBytes } from '../../utils/pdfStorageService';
 
 const PALETTE = [
   '#0f172a', // Slate black
@@ -62,11 +73,28 @@ export const CollaborativeBoard: React.FC = () => {
     leaderViewport,
     updateLeaderViewport,
     connectedCollaborators,
-    peerLatencyMs,
-    otLog
+    visibleBatches,
+    selectedBatchId,
+    uploadedPdfs,
+    activePdfRecord,
+    activePdfBytes,
+    isPdfLoading,
+    pdfUploadModalOpen,
+    openPdfUploadModal,
+    closePdfUploadModal,
+    preselectedPdfFile,
+    pdfNotice,
+    dismissPdfNotice,
+    uploadPdfWithStorageChoice,
+    openPdfOnBoard,
+    closeActivePdf,
+    migratePdfStorage,
+    deleteUploadedPdf,
+    savePdfCopyToDisk
   } = useLMS();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Viewport transforms (Zoom & Pan)
@@ -85,9 +113,13 @@ export const CollaborativeBoard: React.FC = () => {
   const [textInputVal, setTextInputVal] = useState('');
   const [isStickyMode, setIsStickyMode] = useState(false);
 
-  // Custom PDF background (if uploaded)
-  const [customPdfName, setCustomPdfName] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // PDF Library Drawer & Board Drag-Drop state
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isRenderingPdfPage, setIsRenderingPdfPage] = useState(false);
+  const [isStageDragOver, setIsStageDragOver] = useState(false);
+  const [isMigratingActive, setIsMigratingActive] = useState(false);
+
+  const activeBatch = visibleBatches.find(b => b.id === selectedBatchId) || visibleBatches[0];
 
   // Active slide content
   const pages: BoardSlideContent[] = selectedLecture?.slidesPages || [
@@ -99,6 +131,26 @@ export const CollaborativeBoard: React.FC = () => {
     }
   ];
   const currentPage = pages[activePageIndex] || pages[0];
+  const effectiveTotalPages = activePdfRecord ? activePdfRecord.pageCount : pages.length;
+
+  // Render active PDF page via PDF.js whenever the PDF bytes or active page changes
+  useEffect(() => {
+    if (!activePdfBytes || !pdfCanvasRef.current) return;
+    let cancelled = false;
+    setIsRenderingPdfPage(true);
+
+    renderPdfPageToCanvas(activePdfBytes, activePageIndex + 1, pdfCanvasRef.current, 940, 580)
+      .catch(err => {
+        console.error('PDF page render failed:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setIsRenderingPdfPage(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePdfBytes, activePageIndex]);
 
   // Follow Leader Sync: If user is student and follow leader is active, mirror leader's zoom/pan/page
   useEffect(() => {
@@ -493,7 +545,7 @@ export const CollaborativeBoard: React.FC = () => {
 
   // Page switcher
   const handlePageChange = (newIndex: number) => {
-    if (newIndex >= 0 && newIndex < pages.length) {
+    if (newIndex >= 0 && newIndex < effectiveTotalPages) {
       setActivePageIndex(newIndex);
       notifyLeaderViewport(zoom, panOffset, newIndex);
     }
@@ -503,7 +555,8 @@ export const CollaborativeBoard: React.FC = () => {
   const handleExportJSON = () => {
     const boardData = {
       lectureId: selectedLecture?.id,
-      lectureTitle: selectedLecture?.title,
+      lectureTitle: activePdfRecord?.name || selectedLecture?.title,
+      storageDestination: activePdfRecord?.storageDestination || 'lecture-slides',
       exportedAt: new Date().toISOString(),
       strokes
     };
@@ -511,16 +564,29 @@ export const CollaborativeBoard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${selectedLecture?.title.replace(/\s+/g, '_')}_Vector_Board.json`;
+    a.download = `${(activePdfRecord?.name || selectedLecture?.title || 'Board').replace(/\s+/g, '_')}_Vector_Board.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  // Custom PDF Upload handler
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setCustomPdfName(file.name);
+  // Drag-and-drop a PDF onto the board opens the Disk vs. Cloud Storage modal
+  const handleStageDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsStageDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))) {
+      openPdfUploadModal(file);
+    }
+  };
+
+  const handleToggleActivePdfStorage = async () => {
+    if (!activePdfRecord || isMigratingActive) return;
+    setIsMigratingActive(true);
+    try {
+      const nextDest = activePdfRecord.storageDestination === 'cloud' ? 'disk' : 'cloud';
+      await migratePdfStorage(activePdfRecord, nextDest);
+    } finally {
+      setIsMigratingActive(false);
     }
   };
 
@@ -725,29 +791,125 @@ export const CollaborativeBoard: React.FC = () => {
             <Download className="w-4 h-4" />
           </button>
 
-          {/* PDF Upload */}
+          <div className="w-px h-4 bg-slate-200" />
+
+          {/* PDF Library Drawer Button */}
           <button
-            onClick={() => fileInputRef.current?.click()}
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
-            title="Upload PDF Slides (FR-3.1)"
+            onClick={() => setIsLibraryOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md transition-colors"
+            title="View Disk & Cloud Uploaded PDFs"
           >
-            <Upload className="w-4 h-4" />
+            <FolderOpen className="w-3.5 h-3.5 text-slate-500" />
+            <span>PDFs</span>
+            <span className="font-mono tabular-nums text-[11px] text-slate-500">
+              ({uploadedPdfs.length})
+            </span>
           </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept=".pdf"
-            className="hidden"
-          />
+
+          {/* Upload PDF with Disk vs. Cloud Choice */}
+          <button
+            onClick={() => openPdfUploadModal(null)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 rounded-md transition-colors shadow-xs"
+            title="Upload PDF and choose Save on Disk or Store on Cloud"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload PDF</span>
+          </button>
         </div>
       </div>
+
+      {/* Active Uploaded PDF Context Bar (Storage Destination & Quick Actions) */}
+      {activePdfRecord && (
+        <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-4 text-xs z-20 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {activePdfRecord.storageDestination === 'cloud' ? (
+              <Cloud className="w-4 h-4 text-indigo-600 shrink-0" />
+            ) : (
+              <HardDrive className="w-4 h-4 text-amber-600 shrink-0" />
+            )}
+            <span className="font-semibold text-slate-900 truncate">{activePdfRecord.name}</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-slate-600 font-medium shrink-0">
+              {activePdfRecord.storageDestination === 'cloud'
+                ? 'Stored on Cloud (60-min Signed URL)'
+                : 'Saved on Local Disk'}
+            </span>
+            <span className="text-slate-300 hidden md:inline">·</span>
+            <span className="text-slate-500 font-mono tabular-nums hidden md:inline">
+              {formatBytes(activePdfRecord.sizeBytes)} · {activePdfRecord.pageCount} pages
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => savePdfCopyToDisk(activePdfRecord)}
+              className="px-2.5 py-1 text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-md inline-flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" />
+              <span>Save to Disk</span>
+            </button>
+            <button
+              disabled={isMigratingActive}
+              onClick={handleToggleActivePdfStorage}
+              className="px-2.5 py-1 text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-md inline-flex items-center gap-1 disabled:opacity-50"
+            >
+              <ArrowRightLeft className="w-3 h-3" />
+              <span>
+                {activePdfRecord.storageDestination === 'cloud' ? 'Move to Disk' : 'Move to Cloud'}
+              </span>
+            </button>
+            <button
+              onClick={closeActivePdf}
+              className="px-2 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md inline-flex items-center gap-1"
+              title="Close PDF and return to Lecture Slides"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Slides</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Vector Stage Area */}
       <div 
         ref={containerRef}
+        onDragOver={e => {
+          e.preventDefault();
+          if (!isStageDragOver) setIsStageDragOver(true);
+        }}
+        onDragLeave={() => setIsStageDragOver(false)}
+        onDrop={handleStageDrop}
         className="flex-1 relative overflow-hidden flex items-center justify-center p-4"
       >
+        {/* Drag-and-Drop Overlay Prompt */}
+        {isStageDragOver && (
+          <div className="absolute inset-4 z-40 rounded-xl border-2 border-dashed border-indigo-500 bg-indigo-50/90 backdrop-blur-xs flex flex-col items-center justify-center gap-2 pointer-events-none">
+            <Upload className="w-8 h-8 text-indigo-600" />
+            <p className="text-sm font-semibold text-indigo-950">
+              Drop PDF to choose Save on Disk or Store on Cloud
+            </p>
+          </div>
+        )}
+
+        {/* Transient Upload / Migration Notice */}
+        {pdfNotice && (
+          <div className="absolute top-4 right-4 z-40 max-w-md bg-white border border-slate-200 shadow-lg rounded-lg px-3.5 py-2.5 flex items-start gap-2.5 text-xs">
+            {pdfNotice.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            )}
+            <span className="text-slate-700 leading-snug">{pdfNotice.message}</span>
+            <button
+              onClick={dismissPdfNotice}
+              className="text-slate-400 hover:text-slate-700 ml-1 shrink-0"
+              aria-label="Dismiss notice"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Interactive PDF Slide Card / Canvas Stage */}
         <div 
           className="relative bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden select-none"
@@ -759,58 +921,70 @@ export const CollaborativeBoard: React.FC = () => {
             transition: isPanning ? 'none' : 'transform 0.1s ease-out'
           }}
         >
-          {/* Background Layer: High-Fidelity Educational Lecture Slide (or uploaded PDF) */}
-          <div className="absolute inset-0 p-8 flex flex-col justify-between pointer-events-none bg-radial from-slate-50 to-white">
-            {/* Slide Header */}
-            <div>
-              <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-                <span className="font-mono uppercase font-semibold text-indigo-600">
-                  {selectedLecture?.title || 'Distributed Systems'}
-                </span>
-                <span className="font-mono">
-                  Slide {activePageIndex + 1} of {pages.length}
-                </span>
+          {/* Background Layer: Either Real Uploaded PDF rendered via PDF.js OR Lecture Slide Deck */}
+          {activePdfRecord && activePdfBytes ? (
+            <div className="absolute inset-0 bg-slate-50 flex items-center justify-center pointer-events-none">
+              <canvas ref={pdfCanvasRef} className="shadow-xs bg-white" />
+              {(isRenderingPdfPage || isPdfLoading) && (
+                <div className="absolute inset-0 bg-white/75 flex items-center justify-center gap-2 text-xs font-medium text-slate-600">
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                  <span>Rendering PDF page {activePageIndex + 1}...</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="absolute inset-0 p-8 flex flex-col justify-between pointer-events-none bg-radial from-slate-50 to-white">
+              {/* Slide Header */}
+              <div>
+                <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                  <span className="font-mono uppercase font-semibold text-indigo-600">
+                    {selectedLecture?.title || 'Distributed Systems'}
+                  </span>
+                  <span className="font-mono tabular-nums">
+                    Slide {activePageIndex + 1} of {pages.length}
+                  </span>
+                </div>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900 text-wrap-balance">
+                  {currentPage.title}
+                </h2>
+                {currentPage.subtitle && (
+                  <p className="text-sm text-slate-500 mt-1">{currentPage.subtitle}</p>
+                )}
               </div>
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900 text-wrap-balance">
-                {currentPage.title}
-              </h2>
-              {currentPage.subtitle && (
-                <p className="text-sm text-slate-500 mt-1">{currentPage.subtitle}</p>
-              )}
+
+              {/* Slide Body: Concepts, Architecture, or Code */}
+              <div className="my-auto space-y-4 max-w-2xl">
+                {currentPage.keyConcepts && (
+                  <div className="space-y-2">
+                    {currentPage.keyConcepts.map((concept, idx) => (
+                      <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 mt-1.5 shrink-0" />
+                        <span>{concept}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {currentPage.codeSnippet && (
+                  <div className="p-3 bg-slate-900 rounded-lg text-[11px] font-mono text-emerald-300 shadow-inner overflow-x-auto">
+                    <pre>{currentPage.codeSnippet}</pre>
+                  </div>
+                )}
+
+                {currentPage.notes && (
+                  <div className="text-[11px] text-slate-400 italic">
+                    Note: {currentPage.notes}
+                  </div>
+                )}
+              </div>
+
+              {/* Slide Footer */}
+              <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 pt-3">
+                <span>VectorLMS Interactive Vector Stage</span>
+                <span className="font-mono">Lecture_01_Slides.pdf · Drop any PDF to upload</span>
+              </div>
             </div>
-
-            {/* Slide Body: Concepts, Architecture, or Code */}
-            <div className="my-auto space-y-4 max-w-2xl">
-              {currentPage.keyConcepts && (
-                <div className="space-y-2">
-                  {currentPage.keyConcepts.map((concept, idx) => (
-                    <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-700">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 mt-1.5 shrink-0" />
-                      <span>{concept}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {currentPage.codeSnippet && (
-                <div className="p-3 bg-slate-900 rounded-lg text-[11px] font-mono text-emerald-300 shadow-inner overflow-x-auto">
-                  <pre>{currentPage.codeSnippet}</pre>
-                </div>
-              )}
-
-              {currentPage.notes && (
-                <div className="text-[11px] text-slate-400 italic">
-                  Note: {currentPage.notes}
-                </div>
-              )}
-            </div>
-
-            {/* Slide Footer */}
-            <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 pt-3">
-              <span>VectorLMS Interactive Vector Stage · WebGL Accelerated</span>
-              <span className="font-mono">{customPdfName || 'Lecture_01_Slides.pdf'}</span>
-            </div>
-          </div>
+          )}
 
           {/* HTML5 Vector Canvas Layer */}
           <canvas
@@ -893,8 +1067,8 @@ export const CollaborativeBoard: React.FC = () => {
 
         {/* Live Follow Leader Banner (When active for student) */}
         {isFollowLeaderActive && currentUser.role === 'student' && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-xs text-white px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-2 shadow-lg border border-slate-700 pointer-events-none z-30">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-xs text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 shadow-lg border border-slate-700 pointer-events-none z-30">
+            <Eye className="w-3.5 h-3.5 text-emerald-400" />
             <span>Following Leader (Prof. Sarah Sterling) · Viewport Synced</span>
           </div>
         )}
@@ -905,39 +1079,71 @@ export const CollaborativeBoard: React.FC = () => {
             disabled={activePageIndex === 0}
             onClick={() => handlePageChange(activePageIndex - 1)}
             className="p-1 text-slate-600 hover:text-slate-900 disabled:opacity-40 rounded"
+            aria-label="Previous page"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-xs font-medium text-slate-700 font-mono">
-            Page {activePageIndex + 1} / {pages.length}
+          <span className="text-xs font-medium text-slate-700 font-mono tabular-nums">
+            Page {activePageIndex + 1} / {effectiveTotalPages}
           </span>
           <button
-            disabled={activePageIndex >= pages.length - 1}
+            disabled={activePageIndex >= effectiveTotalPages - 1}
             onClick={() => handlePageChange(activePageIndex + 1)}
             className="p-1 text-slate-600 hover:text-slate-900 disabled:opacity-40 rounded"
+            aria-label="Next page"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Bottom Right Live Collaboration Telemetry Badge */}
-        <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-xs border border-slate-200 px-3 py-1.5 rounded-lg text-[11px] text-slate-600 shadow-xs flex items-center gap-3 z-30">
+        {/* Bottom Right Participants & Active Document Summary */}
+        <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-xs border border-slate-200 px-3 py-1.5 rounded-lg text-[11px] text-slate-600 shadow-xs flex items-center gap-2.5 z-30">
           <div className="flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{connectedCollaborators.length} Peers Online</span>
+            <span className="font-mono tabular-nums">{connectedCollaborators.length}</span>
+            <span>Online</span>
           </div>
-          <span>·</span>
-          <div className="flex items-center gap-1">
-            <span className="text-slate-400">OT Rev:</span>
-            <span className="font-mono font-semibold text-slate-800">{otLog.length}</span>
-          </div>
-          <span>·</span>
-          <div className="flex items-center gap-1 font-mono text-[10px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            <span>{peerLatencyMs}ms (P-1 Target &lt;120ms)</span>
-          </div>
+          {activePdfRecord && (
+            <>
+              <span className="text-slate-300">·</span>
+              <div className="flex items-center gap-1 text-slate-700 font-medium">
+                <FileText className="w-3 h-3 text-slate-400" />
+                <span>
+                  {activePdfRecord.storageDestination === 'cloud' ? 'Cloud' : 'Local Disk'}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Per-Upload Storage Choice Modal (Save on Disk vs. Store on Cloud) */}
+      <PDFUploadStorageModal
+        isOpen={pdfUploadModalOpen}
+        preselectedFile={preselectedPdfFile}
+        activeBatchName={activeBatch ? `${activeBatch.code} · ${activeBatch.name}` : 'Active Batch'}
+        onClose={closePdfUploadModal}
+        onConfirmUpload={async params => {
+          await uploadPdfWithStorageChoice(params);
+        }}
+      />
+
+      {/* Uploaded PDF Library Drawer */}
+      <PDFLibraryDrawer
+        isOpen={isLibraryOpen}
+        pdfs={uploadedPdfs}
+        activePdfId={activePdfRecord?.id || null}
+        onClose={() => setIsLibraryOpen(false)}
+        onUploadNew={() => openPdfUploadModal(null)}
+        onOpenOnBoard={record => {
+          openPdfOnBoard(record);
+        }}
+        onSaveToDisk={record => {
+          savePdfCopyToDisk(record);
+        }}
+        onMigrateStorage={migratePdfStorage}
+        onDelete={deleteUploadedPdf}
+      />
     </div>
   );
 };

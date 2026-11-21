@@ -403,3 +403,25 @@ export interface ExamResult {
   questionDetails: ExamQuestionReviewDetail[];
 }
 
+// ==========================================
+// PDF Upload Storage (Disk vs. Cloud)
+// ==========================================
+
+export type PDFStorageDestination = 'disk' | 'cloud';
+
+export interface UploadedPDFRecord {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  pageCount: number;
+  storageDestination: PDFStorageDestination;
+  batchId: string;
+  lectureId?: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  localDiskPath?: string;
+  cloudBucketPath?: string;
+  signedUrl?: string;
+  signedUrlExpiresAt?: number;
+  savedOnServer: boolean;
+}
