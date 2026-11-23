@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+target/
+.mvn/
+.classpath
+.project
+.settings/
+storage/
